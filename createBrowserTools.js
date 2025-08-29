@@ -130,8 +130,12 @@ const createBrowserTools = (page) => {
             }),
             async execute({ filename }) {
                 try {
-                    const finalFilename = filename || `screenshot-${timestamp()}.png`;
-                    const filePath = path.join(screenshotsDir, finalFilename);
+                    let baseFilename = filename || `screenshot-${timestamp()}`;
+                    // FIX: Ensure the filename always has a .png extension
+                    if (!baseFilename.endsWith('.png')) {
+                        baseFilename += '.png';
+                    }
+                    const filePath = path.join(screenshotsDir, baseFilename);
                     await page.screenshot({ path: filePath });
                     console.log(`Screenshot saved to ${filePath}`);
                     return `Successfully saved screenshot to ${filePath}`;

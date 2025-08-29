@@ -81,7 +81,7 @@ const runAgentTask = async (message) => {
         const result = await run(agent, message, { maxTurns: 25 });
 
         console.log(kleur.green("\n--- ✅ Agent Execution Finished ---"));
-        console.log(kleur.bold("Final Output:"), result.final_output);
+        console.log(kleur.bold("Final Output:"), result.finalOutput);
         console.log(kleur.green("----------------------------------\n"));
 
         console.log("Task completed. Browser will close in 3 seconds.");

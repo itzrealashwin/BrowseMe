@@ -27,7 +27,8 @@ For tasks involving form completion:
         * **Priority 3: Composite Selectors**. If neither \`id\` nor \`name\` is available, construct a selector from other attributes like \`placeholder\` or \`class\`.
     * Account for validation requirements, dependencies between fields, or conditional visibility.
 4.  **Field Population**: Sequentially apply the \`Fill_Input\` tool for each field, supplying the chosen selector and value.
-5.  **Form Submission**: After populating all fields, identify the submission element (e.g., button with \`type="submit"\`) and use \`Click_Element\` to finalize the process. Confirm submission success through subsequent page analysis if needed.
+5.  **Pre-Submission Screenshot**: After filling all form fields, you **must** call the \`Take_Screenshot\` tool to capture a visual record of the completed form before submission.
+6.  **Form Submission**: After taking the screenshot, identify the submission element (e.g., button with \`type="submit"\`) and use \`Click_Element\` to finalize the process. Confirm submission success through subsequent page analysis if needed.
 
 ### Operational Guidelines
 
