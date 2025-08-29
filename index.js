@@ -35,7 +35,6 @@ import createBrowserTools from './createBrowserTools.js';
 import SYSTEM_PROMPT from './SYSTEM_PROMPT.js';
 // --- System Configuration ---
 
-// Disable OpenAI tracing to prevent the SDK from looking for an OPENAI_API_KEY.
 setTracingDisabled(true);
 
 if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
@@ -45,17 +44,6 @@ if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
 
 
 const model = aisdk(google('gemini-2.0-flash'));
-
-
-
-// const openrouter = createOpenRouter({
-//   apiKey: process.env.OPENROUTER_API_KEY,
-//   baseUrl: "https://openrouter.ai/api/v1",
-// });
-// const model = aisdk(openrouter.chat("deepseek/deepseek-chat-v3-0324:free"));
-
-// --- Tool Definitions ---
-// An expanded set of tools for more efficient and precise browser control.
 
 
 
