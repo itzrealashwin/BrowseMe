@@ -1,0 +1,23 @@
+{
+  "name": "browseme",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@ai-sdk/deepseek": "^1.0.13",
+    "@ai-sdk/google": "^2.0.11",
+    "@openai/agents": "^0.1.0",
+    "@openai/agents-extensions": "^0.1.0",
+    "@openrouter/ai-sdk-provider": "^1.1.2",
+    "dotenv": "^17.2.1",
+    "kleur": "^4.1.5",
+    "playwright": "^1.55.0",
+    "zod": "^3.25.76"
+  }
+}
