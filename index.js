@@ -44,7 +44,7 @@ if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
 }
 
 
-const model = aisdk(google('gemini-2.5-flash'));
+const model = aisdk(google('gemini-2.0-flash'));
 
 
 
