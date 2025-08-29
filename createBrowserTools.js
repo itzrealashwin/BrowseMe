@@ -1,236 +1,175 @@
-import fs from 'fs';
-import path from 'path';
-import kleur from 'kleur';
-import { tool } from '@openai/agents';
-import { z } from 'zod';
+import { tool } from "@openai/agents";
+import { z } from "zod";
+import fs from "fs";
+import path from "path";
 
+/**
+ * Creates a suite of browser automation tools that operate on a given Playwright page object.
+ * @param {import('playwright').Page} page The Playwright page instance to control.
+ * @returns {Array} An array containing all the browser automation tools.
+ */
 const createBrowserTools = (page) => {
-    // Ensure screenshots folder exists
+    // Ensure screenshots folder exists for the takeScreenshot tool
     const screenshotsDir = path.join(process.cwd(), 'screenshots');
-    if (!fs.existsSync(screenshotsDir)) fs.mkdirSync(screenshotsDir);
-
+    if (!fs.existsSync(screenshotsDir)) {
+        fs.mkdirSync(screenshotsDir);
+    }
     const timestamp = () => new Date().toISOString().replace(/[:.]/g, '-');
 
     return [
-        // Navigate to page
         tool({
-            name: 'goToPage',
-            description: 'Navigates the browser to a specified URL.',
+            name: "Open_web_page",
+            description: "Open browser for a given URL. Should be the first step.",
             parameters: z.object({ url: z.string().url() }),
-            execute: async ({ url }) => {
-                try {
-                    console.log(kleur.cyan(`Navigating to ${url}...`));
-                    await page.goto(url);
-
-                    // This makes the tool adaptable to the current login state.
-                    console.log(kleur.yellow('Waiting for login page or main timeline...'));
-
-                  
-                    return `Successfully navigated to ${url} and the page is ready.`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to navigate or find the essential page elements. Details: ${error.message}`;
-                }
+            async execute({ url }) {
+                console.log(`Navigating to page: ${url}`);
+                // Use a more robust waiting strategy for modern web applications
+                await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                await page.waitForLoadState('networkidle', { timeout: 30000 });
+                return `Successfully opened web page: ${url}`;
             },
         }),
 
-        // Take Screenshot (Corrected Version)
         tool({
-            name: 'takeScreenshot',
-            description: 'Takes a screenshot of the current viewport and saves it in the screenshots folder.',
-            parameters: z.object({
-                filename: z.string().nullable().optional().describe("The desired filename without extension. Defaults to a timestamp.")
-            }),
-            execute: async ({ filename }) => {
-                try {
-                    // Use provided filename or generate a new one
-                    let baseFilename = filename ? filename : `screenshot-${timestamp()}`;
+            name: "GET_DOM_ELEMENTS",
+            description: "Gets a simplified list of interactive elements from the current page DOM.",
+            parameters: z.object({}),
+            async execute() {
+                console.log("Getting DOM elements...");
+                const elements = await page.evaluate(() => {
+                    const interactiveElements = [];
+                    document
+                        .querySelectorAll("a, button, input[type=submit], input[type=button], [role='button'], [role='link']")
+                        .forEach((el) => {
+                            // Filter out non-visible elements
+                            if (el.offsetWidth > 0 && el.offsetHeight > 0) {
+                                interactiveElements.push({
+                                    text: el.innerText || el.value || el.getAttribute('aria-label') || "",
+                                    selector: el.tagName.toLowerCase() + (el.id ? `#${el.id}` : ""),
+                                });
+                            }
+                        });
+                    return interactiveElements;
+                });
+                return elements;
+            },
+        }),
 
-                    // FIX: Ensure the filename always has a .png extension
-                    if (path.extname(baseFilename) === '') {
-                        baseFilename += '.png';
+        tool({
+            name: "Click_Element",
+            description: "Intelligently clicks on an element. It first tries to find the element by its visible text or role, then falls back to a CSS selector.",
+            parameters: z.object({ target: z.string().describe("The text of the element or its CSS selector.") }),
+            async execute({ target }) {
+                try {
+                    // Try to find by role (button)
+                    let locator = page.getByRole("button", { name: new RegExp(target, "i") });
+                    if (await locator.count() > 0) {
+                        await locator.first().click();
+                        console.log(`Clicked button with text: ${target}`);
+                        return `Successfully clicked button with text: ${target}`;
                     }
 
-                    const filePath = path.join(screenshotsDir, baseFilename);
-                    await page.screenshot({ path: filePath });
+                    // Try to find by role (link)
+                    locator = page.getByRole("link", { name: new RegExp(target, "i") });
+                    if (await locator.count() > 0) {
+                        await locator.first().click();
+                        console.log(`Clicked link with text: ${target}`);
+                        return `Successfully clicked link with text: ${target}`;
+                    }
 
-                    console.log(kleur.green(`Screenshot saved at: ${filePath}`));
-                    return `Screenshot saved successfully at ${filePath}`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to take screenshot. Details: ${error.message}`;
+                    // Fallback to general text
+                    locator = page.getByText(new RegExp(`^${target}$`, "i"));
+                    if (await locator.count() > 0) {
+                        await locator.first().click();
+                        console.log(`Clicked element with text: ${target}`);
+                        return `Successfully clicked element with text: ${target}`;
+                    }
+
+                    // Fallback to CSS selector
+                    locator = page.locator(target);
+                    if (await locator.count() > 0) {
+                        await locator.first().click();
+                        console.log(`Clicked CSS selector: ${target}`);
+                        return `Successfully clicked CSS selector: ${target}`;
+                    }
+
+                    console.log(`No element found for: ${target}`);
+                    return `Error: No element found for target "${target}".`;
+                } catch (err) {
+                    console.log(`Failed to click ${target}`, err);
+                    return `Error: Failed to click "${target}". Details: ${err.message}`;
                 }
             },
         }),
-        // Get Page Elements
+
         tool({
-            name: 'getPageElements',
-            description: 'Scans the webpage and returns a list of all interactive elements with text, role, and coordinates.',
+            name: "Fill_Input",
+            description: "Types text into an input field using its CSS selector by simulating key presses.",
+            parameters: z.object({
+                selector: z.string().describe("The CSS selector of the input field."),
+                value: z.string().describe("The text to type into the field."),
+            }),
+            async execute({ selector, value }) {
+                try {
+                    console.log(`Typing '${value}' into '${selector}' manually...`);
+                    // Use pressSequentially for a more human-like typing simulation
+                    await page.locator(selector).pressSequentially(value, { delay: 50 });
+                    return `Successfully typed '${value}' into '${selector}'.`;
+                } catch (err) {
+                    console.log(`Failed to fill input ${selector}: ${err}`);
+                    return `Error: Failed to fill input "${selector}". Details: ${err.message}`;
+                }
+            },
+        }),
+
+        tool({
+            name: "Take_Screenshot",
+            description: "Takes a screenshot of the current page viewport and saves it to a file.",
+            parameters: z.object({
+                filename: z.string().nullable().optional().describe("An optional filename for the screenshot. Defaults to a timestamped name."),
+            }),
+            async execute({ filename }) {
+                try {
+                    const finalFilename = filename || `screenshot-${timestamp()}.png`;
+                    const filePath = path.join(screenshotsDir, finalFilename);
+                    await page.screenshot({ path: filePath });
+                    console.log(`Screenshot saved to ${filePath}`);
+                    return `Successfully saved screenshot to ${filePath}`;
+                } catch (err) {
+                    console.log(`Failed to take screenshot: ${err}`);
+                    return `Error: Failed to take screenshot. Details: ${err.message}`;
+                }
+            },
+        }),
+        tool({
+            name: "Task_Complete",
+            description: "Call this tool when the user's task has been successfully completed.",
+            parameters: z.object({
+                summary: z.string().describe("A brief summary of what was accomplished."),
+            }),
+            async execute({ summary }) {
+                console.log(`Task Complete: ${summary}`);
+                return `Task successfully marked as complete.`;
+            },
+        }),
+        tool({
+            name: "Get_Page_HTML",
+            description: "Gets the full HTML content of the current page. Useful for understanding the structure of forms and elements.",
             parameters: z.object({}),
-            execute: async () => {
+            async execute() {
                 try {
-                    console.log(kleur.cyan('Scanning page for interactive elements...'));
-                    const elements = await page.evaluate(() => {
-                        const interactiveElements = Array.from(
-                            document.querySelectorAll('a, button, input[type="submit"], input[type="button"], [role="button"], [onclick]')
-                        );
-                        return interactiveElements.map((el, index) => {
-                            const rect = el.getBoundingClientRect();
-                            return {
-                                id: index + 1,
-                                text: el.innerText || el.getAttribute('aria-label') || el.getAttribute('title') || '',
-                                role: el.tagName.toLowerCase(),
-                                coords: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) }
-                            };
-                        });
-                    });
-                    return `Found ${elements.length} interactive elements.`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to get page elements. Details: ${error.message}`;
-                }
-            }
-        }),
-
-        // Fill Field
-        tool({
-            name: 'fillField',
-            description: 'Fills a form field with text, identified by a CSS selector.',
-            parameters: z.object({ selector: z.string(), text: z.string() }),
-            execute: async ({ selector, text }) => {
-                try {
-                    console.log(kleur.cyan(`Filling "${text}" into "${selector}"...`));
-                    await page.fill(selector, text);
-                    return `Successfully filled "${selector}".`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to fill field. Details: ${error.message}`;
-                }
-            }
-        }),
-
-        // Scroll Page
-        tool({
-            name: 'scrollPage',
-            description: 'Scrolls the page vertically.',
-            parameters: z.object({ scrollAmount: z.number() }),
-            execute: async ({ scrollAmount }) => {
-                try {
-                    console.log(kleur.cyan(`Scrolling by ${scrollAmount} pixels...`));
-                    await page.mouse.wheel(0, scrollAmount);
-                    return `Successfully scrolled by ${scrollAmount} pixels.`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to scroll. Details: ${error.message}`;
-                }
-            }
-        }),
-
-        // Type Text
-        tool({
-            name: 'typeText',
-            description: 'Types text into the currently focused element.',
-            parameters: z.object({ text: z.string() }),
-            execute: async ({ text }) => {
-                try {
-                    console.log(kleur.cyan(`Typing text: "${text}"...`));
-                    await page.keyboard.type(text);
-                    return `Successfully typed "${text}".`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to type text. Details: ${error.message}`;
-                }
-            }
-        }),
-
-        // Click At Coordinates
-        tool({
-            name: 'clickAtCoordinates',
-            description: 'Clicks at a specific (x, y) coordinate on the page.',
-            parameters: z.object({ x: z.number(), y: z.number() }),
-            execute: async ({ x, y }) => {
-                try {
-                    console.log(kleur.cyan(`Clicking at coordinates (${x}, ${y})...`));
-                    await page.mouse.click(x, y);
-                    return `Successfully clicked at (${x}, ${y}).`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to click at coordinates. Details: ${error.message}`;
-                }
-            }
-        }),
-
-        // Drag and Drop
-        tool({
-            name: 'dragAndDropElement',
-            description: 'Drags an element from a source to a target location.',
-            parameters: z.object({ sourceSelector: z.string(), targetSelector: z.string() }),
-            execute: async ({ sourceSelector, targetSelector }) => {
-                try {
-                    console.log(kleur.cyan(`Dragging "${sourceSelector}" to "${targetSelector}"...`));
-                    await page.dragAndDrop(sourceSelector, targetSelector);
-                    return `Successfully dragged "${sourceSelector}" to "${targetSelector}".`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to drag and drop. Details: ${error.message}`;
-                }
-            }
-        }),
-
-        // Get Page HTML
-        tool({
-            name: 'getPageHTML',
-            description: 'Gets the full HTML of the current page.',
-            parameters: z.object({}),
-            execute: async () => {
-                try {
-                    console.log(kleur.cyan('Fetching page HTML...'));
+                    console.log('Fetching page HTML...');
                     const html = await page.content();
-                    return html.length > 10000 ? html.slice(0, 10000) + '... [truncated]' : html;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to get page HTML. Details: ${error.message}`;
+                    // Truncate if the HTML is too long to avoid overwhelming the model
+                    return html.length > 20000 ? html.slice(0, 20000) + '... [HTML Truncated]' : html;
+                } catch (err) {
+                    console.log(`Failed to get page HTML: ${err}`);
+                    return `Error: Failed to get page HTML. Details: ${err.message}`;
                 }
-            }
-        }),
-
-        // Find Elements By Text
-        tool({
-            name: 'findElementsByText',
-            description: 'Finds elements containing specific text.',
-            parameters: z.object({ text: z.string() }),
-            execute: async ({ text }) => {
-                try {
-                    console.log(kleur.cyan(`Searching for elements containing text "${text}"...`));
-                    const elements = await page.evaluate((searchText) => {
-                        const matches = [];
-                        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-                        let node;
-                        while ((node = walker.nextNode())) {
-                            if (node.innerText && node.innerText.toLowerCase().includes(searchText.toLowerCase())) {
-                                const rect = node.getBoundingClientRect();
-                                if (rect.width > 0 && rect.height > 0) {
-                                    matches.push({
-                                        tag: node.tagName.toLowerCase(),
-                                        text: node.innerText.trim(),
-                                        selector: node.outerHTML.slice(0, 100),
-                                        coords: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
-                                    });
-                                }
-                            }
-                        }
-                        return matches;
-                    }, text);
-
-                    if (elements.length === 0) return `No elements found with text "${text}".`;
-                    return `Found ${elements.length} elements with text "${text}".\nDetails (first 5):\n${JSON.stringify(elements.slice(0, 5), null, 2)}`;
-                } catch (error) {
-                    console.error(error);
-                    return `Failed to search elements. Details: ${error.message}`;
-                }
-            }
+            },
         }),
     ];
 };
 
 export default createBrowserTools;
+

@@ -32,6 +32,7 @@ import { z } from 'zod';
 import readline from 'readline';
 import kleur from 'kleur';
 import createBrowserTools from './createBrowserTools.js';
+import SYSTEM_PROMPT from './SYSTEM_PROMPT.js';
 // --- System Configuration ---
 
 // Disable OpenAI tracing to prevent the SDK from looking for an OPENAI_API_KEY.
@@ -42,29 +43,8 @@ if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
     process.exit(1);
 }
 
-const SYSTEM_PROMPT = `You are a sophisticated AI agent designed to autonomously operate a web browser. Your primary directive is to achieve the user's goal by intelligently interacting with web pages.
 
-### Core Strategy: Sense -> Plan -> Act
-
-You must follow this workflow for every step to ensure accuracy:
-
-**1. Sense:** Always begin by understanding the current state of the page. Your primary tools for this are \`getPageElements\` and \`findElementsByText\`. Use them to get a structured list of all interactive elements, their labels, and their exact coordinates. Use \`takeScreenshot\` only when you need additional visual context to resolve ambiguity.
-
-**2. Plan:** Analyze the data from the "Sense" step to create a precise plan. Identify the specific element required for the current task based on its text or role. From that element's data, determine the exact coordinates needed for your action.
-
-**3. Act:** Execute your plan with precision.
-   - **All clicks must be performed using the \`clickAtCoordinates\` tool.** Do not guess; use the coordinates you identified in the "Plan" step.
-   - For text entry, use \`fillField\` for specific form inputs or \`typeText\` for more general typing.
-
-### Guiding Principles
-
-- **Think Step-by-Step:** Deconstruct complex user requests into a logical sequence of tool calls. Verbalize your reasoning for each step.
-- **Precision Over Speed:** Always prefer a methodical Sense -> Plan -> Act cycle over making assumptions. If you are uncertain, use a sense tool again to re-evaluate the page.
-- **Self-Correction:** If an action does not produce the expected result, do not repeat it blindly. Re-run the "Sense" step to understand what has changed and formulate a new plan.
-`;
-
-// Wrap Google Gemini with aisdk
-const model = aisdk(google('gemini-2.0-flash'));
+const model = aisdk(google('gemini-2.5-flash'));
 
 
 
@@ -93,11 +73,12 @@ const runAgentTask = async (message) => {
             instructions: SYSTEM_PROMPT,
             tools: browserTools,
             model,
+
         });
 
         console.log(kleur.yellow(`\n🚀 Executing Task: "${message}"`));
 
-        const result = await run(agent, message);
+        const result = await run(agent, message, { maxTurns: 25 });
 
         console.log(kleur.green("\n--- ✅ Agent Execution Finished ---"));
         console.log(kleur.bold("Final Output:"), result.final_output);
